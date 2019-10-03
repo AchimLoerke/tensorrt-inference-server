@@ -134,6 +134,8 @@ struct AllocPayload {
   struct ShmInfo {
     void* base_;
     size_t byte_size_;
+    int kind;
+    int device_id;
   };
 
   using TensorShmMap = std::unordered_map<std::string, ShmInfo>;
