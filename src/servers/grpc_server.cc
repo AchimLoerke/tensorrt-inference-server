@@ -134,7 +134,7 @@ struct AllocPayload {
   struct ShmInfo {
     void* base_;
     size_t byte_size_;
-    int kind;
+    TRTSERVER_Memory_Type kind;
     int device_id;
   };
 
