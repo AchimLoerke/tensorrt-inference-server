@@ -27,7 +27,9 @@
 # Default setting is building on ubuntu:18.04
 ARG UBUNTU_VERSION=18.04
 
-FROM ubuntu:${UBUNTU_VERSION}
+#FROM ubuntu:${UBUNTU_VERSION}
+# Use TRTIS container to test CUDA sample build
+FROM nvcr.io/nvidia/tensorrtserver:19.09-py3
 
 # Default to use Python3. Allowed values are "2" and "3".
 ARG PYVER=3
@@ -66,6 +68,13 @@ COPY VERSION .
 COPY build build
 COPY src/clients src/clients
 COPY src/core src/core
+
+RUN LIBCUDA_FOUND=$(ldconfig -p | grep -v compat | awk '{print $1}' | grep libcuda.so | wc -l) && \
+    if [[ "$LIBCUDA_FOUND" -eq 0 ]]; then \
+        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64/stubs; \
+        ln -fs /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1; \
+    fi && \
+    echo $LD_LIBRARY_PATH
 
 RUN cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/workspace/install && \
