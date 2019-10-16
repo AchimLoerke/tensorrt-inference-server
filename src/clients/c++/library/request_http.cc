@@ -37,10 +37,6 @@
 #define strncasecmp _strnicmp
 #endif
 
-#if TRTIS_ENABLE_GPU
-#include <cuda_runtime_api.h>
-#endif  // TRTIS_ENABLE_GPU
-
 namespace nvidia { namespace inferenceserver { namespace client {
 
 class HttpRequestImpl;
@@ -669,7 +665,7 @@ SharedMemoryControlHttpContextImpl::RegisterCudaSharedMemory(
     size_t byte_size, int device_id)
 {
   return SendRequest(
-      "cudaregister", name, cuda_shm_handle, 0, byte_size, device_id);
+      "cudaregister", name, "", 0, byte_size, device_id);
 }
 #endif  // TRTIS_ENABLE_GPU
 
