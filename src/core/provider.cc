@@ -42,12 +42,12 @@
 namespace nvidia { namespace inferenceserver {
 
 //
-// SystemMemoryReference
+// MemoryReference
 //
-SystemMemoryReference::SystemMemoryReference() : SystemMemory() {}
+MemoryReference::MemoryReference() : Memory() {}
 
 const char*
-SystemMemoryReference::BufferAt(
+MemoryReference::BufferAt(
     size_t idx, size_t* byte_size, TRTSERVER_Memory_Type* memory_type) const
 {
   if (idx >= buffer_.size()) {
@@ -61,7 +61,7 @@ SystemMemoryReference::BufferAt(
 }
 
 size_t
-SystemMemoryReference::AddBuffer(
+MemoryReference::AddBuffer(
     const char* buffer, size_t byte_size, TRTSERVER_Memory_Type memory_type)
 {
   total_byte_size_ += byte_size;
@@ -71,7 +71,7 @@ SystemMemoryReference::AddBuffer(
 
 AllocatedSystemMemory::AllocatedSystemMemory(
     size_t byte_size, TRTSERVER_Memory_Type memory_type)
-    : SystemMemory(), memory_type_(memory_type)
+    : Memory(), memory_type_(memory_type)
 {
   buffer_ = nullptr;
   if (byte_size != 0) {
@@ -148,7 +148,7 @@ Status
 InferRequestProvider::Create(
     const std::string& model_name, const int64_t model_version,
     const InferRequestHeader& request_header,
-    const std::unordered_map<std::string, std::shared_ptr<SystemMemory>>&
+    const std::unordered_map<std::string, std::shared_ptr<Memory>>&
         input_buffer,
     std::shared_ptr<InferRequestProvider>* provider)
 {
@@ -280,8 +280,8 @@ InferRequestProvider::GetNextInputContent(
 }
 
 Status
-InferRequestProvider::GetSystemMemory(
-    const std::string& name, std::shared_ptr<SystemMemory>* input_buffer)
+InferRequestProvider::GetMemory(
+    const std::string& name, std::shared_ptr<Memory>* input_buffer)
 {
   auto it = input_buffer_.find(name);
   if (it == input_buffer_.end()) {
@@ -381,7 +381,8 @@ InferResponseProvider::InferResponseProvider(
     const std::shared_ptr<LabelProvider>& label_provider,
     TRTSERVER_ResponseAllocator* allocator,
     TRTSERVER_ResponseAllocatorAllocFn_t alloc_fn, void* alloc_userp,
-    TRTSERVER_ResponseAllocatorReleaseFn_t release_fn)
+    TRTSERVER_ResponseAllocatorReleaseFn_t release_fn,
+    const std::unordered_map<std::string, TRTSERVER_Memory_Type>& output_buffer)
     : request_header_(request_header), label_provider_(label_provider),
       allocator_(allocator), alloc_fn_(alloc_fn), alloc_userp_(alloc_userp),
       release_fn_(release_fn)
@@ -389,7 +390,14 @@ InferResponseProvider::InferResponseProvider(
   // Create a map from output name to the InferRequestHeader::Output
   // object for that output.
   for (const InferRequestHeader::Output& output : request_header.output()) {
-    output_map_.emplace(std::make_pair(output.name(), output));
+    auto it = output_buffer.find(output.name());
+    if (it == output_buffer.end()) {
+      output_map_.emplace(std::make_pair(
+          output.name(), std::make_pair(output, TRTSERVER_MEMORY_CPU)));
+    } else {
+      output_map_.emplace(
+          std::make_pair(output.name(), std::make_pair(output, it->second)));
+    }
   }
 }
 
@@ -397,6 +405,13 @@ bool
 InferResponseProvider::RequiresOutput(const std::string& name)
 {
   return output_map_.find(name) != output_map_.end();
+}
+
+TRTSERVER_Memory_Type
+InferResponseProvider::OutputMemoryType(const std::string& name)
+{
+  auto pr = output_map_.find(name);
+  return pr->second.second;
 }
 
 Status
@@ -601,11 +616,12 @@ InferResponseProvider::Create(
     TRTSERVER_ResponseAllocator* allocator,
     TRTSERVER_ResponseAllocatorAllocFn_t alloc_fn, void* alloc_userp,
     TRTSERVER_ResponseAllocatorReleaseFn_t release_fn,
+    const std::unordered_map<std::string, TRTSERVER_Memory_Type>& output_buffer,
     std::shared_ptr<InferResponseProvider>* infer_provider)
 {
   InferResponseProvider* provider = new InferResponseProvider(
       request_header, label_provider, allocator, alloc_fn, alloc_userp,
-      release_fn);
+      release_fn, output_buffer);
   infer_provider->reset(provider);
 
   return Status::Success;
@@ -672,7 +688,7 @@ InferResponseProvider::AllocateOutputBuffer(
   // For cls result, the preferred memory type must be CPU. Otherwise,
   // return success and nullptr to align with the behavior of
   // 'TRTSERVER_ResponseAllocatorAllocFn_t'
-  if (pr->second.has_cls()) {
+  if (pr->second.first.has_cls()) {
     if (content_byte_size == 0) {
       Status(
           RequestStatusCode::INVALID_ARG,
@@ -680,7 +696,7 @@ InferResponseProvider::AllocateOutputBuffer(
               " while its output buffer size is 0");
     }
     if (preferred_memory_type == TRTSERVER_MEMORY_CPU) {
-      loutput->cls_count_ = pr->second.cls().count();
+      loutput->cls_count_ = pr->second.first.cls().count();
       char* buffer = new char[content_byte_size];
       *content = static_cast<void*>(buffer);
       loutput->ptr_ = static_cast<void*>(buffer);

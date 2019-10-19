@@ -161,7 +161,7 @@ BackendContext::SetFixedSizeOutputBuffer(
     // skip it in the 'content'.
     if (payload.status_.IsOk() && (payload.response_provider_ != nullptr) &&
         payload.response_provider_->RequiresOutput(name)) {
-      auto dst_memory_type = src_memory_type;
+      auto dst_memory_type = payload.response_provider_->OutputMemoryType(name);
       void* buffer = nullptr;
 
       // try to get buffer with the same memory type as the output tensor

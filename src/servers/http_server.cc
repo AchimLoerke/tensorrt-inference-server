@@ -896,14 +896,15 @@ HTTPAPIServer::EVBufferToInput(
         }
 
         void* base;
+        TRTSERVER_Memory_Type memory_type = TRTSERVER_MEMORY_CPU;
         TRTSERVER_SharedMemoryBlock* smb = nullptr;
         RETURN_IF_ERR(smb_manager_->Get(&smb, io.shared_memory().name()));
         RETURN_IF_ERR(TRTSERVER_ServerSharedMemoryAddress(
             server_.get(), smb, io.shared_memory().offset(),
             io.shared_memory().byte_size(), &base));
+        TRTSERVER_SharedMemoryBlockDevice(smb, &memory_type);
         RETURN_IF_ERR(TRTSERVER_InferenceRequestProviderSetInputData(
-            request_provider, io.name().c_str(), base, byte_size,
-            TRTSERVER_MEMORY_CPU));
+            request_provider, io.name().c_str(), base, byte_size, memory_type));
       } else {
         while ((byte_size > 0) && (v_idx < n)) {
           char* base = static_cast<char*>(v[v_idx].iov_base);
@@ -947,6 +948,7 @@ HTTPAPIServer::EVBufferToInput(
 
   // Initialize System Memory for Output if it uses shared memory
   for (const auto& io : request_header.output()) {
+    TRTSERVER_Memory_Type memory_type = TRTSERVER_MEMORY_CPU;
     if (io.has_shared_memory()) {
       void* base;
       TRTSERVER_SharedMemoryBlock* smb = nullptr;
@@ -954,12 +956,15 @@ HTTPAPIServer::EVBufferToInput(
       RETURN_IF_ERR(TRTSERVER_ServerSharedMemoryAddress(
           server_.get(), smb, io.shared_memory().offset(),
           io.shared_memory().byte_size(), &base));
+      TRTSERVER_SharedMemoryBlockDevice(smb, &memory_type);
 
       output_shm_map.emplace(
           io.name(),
           std::make_pair(
               static_cast<const void*>(base), io.shared_memory().byte_size()));
     }
+    RETURN_IF_ERR(TRTSERVER_InferenceRequestProviderSetOutputMemoryType(
+        request_provider, io.name().c_str(), memory_type));
   }
 
   return nullptr;  // success

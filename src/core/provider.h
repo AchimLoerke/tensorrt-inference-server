@@ -38,9 +38,9 @@ class InferenceBackend;
 class LabelProvider;
 
 //
-// SystemMemory used to access data in providers
+// Memory used to access data in providers
 //
-class SystemMemory {
+class Memory {
  public:
   // Get the 'idx'-th data block in the buffer. Using index to avoid
   // maintaining internal state such that one buffer can be shared
@@ -58,16 +58,16 @@ class SystemMemory {
   size_t TotalByteSize() const { return total_byte_size_; }
 
  protected:
-  SystemMemory() : total_byte_size_(0) {}
+  Memory() : total_byte_size_(0) {}
   size_t total_byte_size_;
 };
 
-class SystemMemoryReference : public SystemMemory {
+class MemoryReference : public Memory {
  public:
   // Create a read-only data buffer as a reference to other data buffer
-  SystemMemoryReference();
+  MemoryReference();
 
-  //\see SystemMemory::BufferAt()
+  //\see Memory::BufferAt()
   const char* BufferAt(
       size_t idx, size_t* byte_size,
       TRTSERVER_Memory_Type* memory_type) const override;
@@ -82,14 +82,14 @@ class SystemMemoryReference : public SystemMemory {
   std::vector<Block> buffer_;
 };
 
-class AllocatedSystemMemory : public SystemMemory {
+class AllocatedSystemMemory : public Memory {
  public:
   // Create a continuous data buffer with 'byte_size' and 'memory_type'.
   AllocatedSystemMemory(size_t byte_size, TRTSERVER_Memory_Type memory_type);
 
   ~AllocatedSystemMemory();
 
-  //\see SystemMemory::BufferAt()
+  //\see Memory::BufferAt()
   const char* BufferAt(
       size_t idx, size_t* byte_size,
       TRTSERVER_Memory_Type* memory_type) const override;
@@ -113,7 +113,7 @@ class InferRequestProvider {
   static Status Create(
       const std::string& model_name, const int64_t model_version,
       const InferRequestHeader& request_header,
-      const std::unordered_map<std::string, std::shared_ptr<SystemMemory>>&
+      const std::unordered_map<std::string, std::shared_ptr<Memory>>&
           input_buffer,
       std::shared_ptr<InferRequestProvider>* provider);
 
@@ -151,8 +151,8 @@ class InferRequestProvider {
       TRTSERVER_Memory_Type* memory_type, bool force_contiguous);
 
   // Retrieve the data buffer of input 'name'.
-  Status GetSystemMemory(
-      const std::string& name, std::shared_ptr<SystemMemory>* input_buffer);
+  Status GetMemory(
+      const std::string& name, std::shared_ptr<Memory>* input_buffer);
 
   // Set content for named inputs. If the input already has content,
   // this content will be in-place of existing content.
@@ -202,8 +202,7 @@ class InferRequestProvider {
 
   // Map from input name to the content of the input. The content contains
   // the buffer and index to the next data block for the named input.
-  std::unordered_map<
-      std::string, std::pair<std::shared_ptr<SystemMemory>, size_t>>
+  std::unordered_map<std::string, std::pair<std::shared_ptr<Memory>, size_t>>
       input_buffer_;
 };
 
@@ -250,6 +249,8 @@ class InferResponseProvider {
       TRTSERVER_ResponseAllocator* allocator,
       TRTSERVER_ResponseAllocatorAllocFn_t alloc_fn, void* alloc_userp,
       TRTSERVER_ResponseAllocatorReleaseFn_t release_fn,
+      const std::unordered_map<std::string, TRTSERVER_Memory_Type>&
+          output_buffer,
       std::shared_ptr<InferResponseProvider>* infer_provider);
 
   ~InferResponseProvider();
@@ -262,6 +263,9 @@ class InferResponseProvider {
 
   // Return true if this provider requires a named output.
   bool RequiresOutput(const std::string& name);
+
+  // Return memorytype of this output.
+  TRTSERVER_Memory_Type OutputMemoryType(const std::string& name);
 
   // Get a buffer to store results for a named output. Must be called
   // exactly once for each output that is being returned for the
@@ -301,13 +305,18 @@ class InferResponseProvider {
       const std::shared_ptr<LabelProvider>& label_provider,
       TRTSERVER_ResponseAllocator* allocator,
       TRTSERVER_ResponseAllocatorAllocFn_t alloc_fn, void* alloc_userp,
-      TRTSERVER_ResponseAllocatorReleaseFn_t release_fn);
+      TRTSERVER_ResponseAllocatorReleaseFn_t release_fn,
+      const std::unordered_map<std::string, TRTSERVER_Memory_Type>&
+          output_buffer);
 
   InferRequestHeader request_header_;
 
   // Map from output name to the InferRequestHeader output information
-  // for that output.
-  std::unordered_map<std::string, const InferRequestHeader::Output> output_map_;
+  // for that output and it's memory type.
+  std::unordered_map<
+      std::string,
+      std::pair<const InferRequestHeader::Output, TRTSERVER_Memory_Type>>
+      output_map_;
 
   // Information about each output.
   struct Output {
