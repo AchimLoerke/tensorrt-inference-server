@@ -81,7 +81,8 @@ class EnsembleContext {
   static TRTSERVER_Error* ResponseAlloc(
       TRTSERVER_ResponseAllocator* allocator, void** buffer,
       void** buffer_userp, const char* tensor_name, size_t byte_size,
-      TRTSERVER_Memory_Type memory_type, int64_t memory_type_id, void* userp);
+      TRTSERVER_Memory_Type memory_type, int64_t memory_type_id, void* userp,
+      TRTSERVER_Memory_Type* allocated_memory_type);
   static TRTSERVER_Error* ResponseRelease(
       TRTSERVER_ResponseAllocator* allocator, void* buffer, void* buffer_userp,
       size_t byte_size, TRTSERVER_Memory_Type memory_type,
@@ -316,7 +317,8 @@ TRTSERVER_Error*
 EnsembleContext::ResponseAlloc(
     TRTSERVER_ResponseAllocator* allocator, void** buffer, void** buffer_userp,
     const char* tensor_name, size_t byte_size,
-    TRTSERVER_Memory_Type memory_type, int64_t memory_type_id, void* userp)
+    TRTSERVER_Memory_Type memory_type, int64_t memory_type_id, void* userp,
+    TRTSERVER_Memory_Type* allocated_memory_type)
 {
   auto tensor_data_map = reinterpret_cast<
       std::unordered_map<std::string, std::shared_ptr<AllocatedSystemMemory>>*>(
@@ -328,10 +330,9 @@ EnsembleContext::ResponseAlloc(
   auto allocated_buffer = std::make_shared<AllocatedSystemMemory>(
       byte_size, memory_type, memory_type_id);
 
-  TRTSERVER_Memory_Type allocated_memory_type;
   int64_t allocated_memory_type_id;
   auto mutable_buffer = allocated_buffer->MutableBuffer(
-      &allocated_memory_type, &allocated_memory_type_id);
+      allocated_memory_type, &allocated_memory_type_id);
   if ((mutable_buffer != nullptr) || (byte_size == 0)) {
     if (byte_size != 0) {
       *buffer = static_cast<void*>(mutable_buffer);
@@ -339,8 +340,8 @@ EnsembleContext::ResponseAlloc(
     tensor_data_map->emplace(tensor_name, std::move(allocated_buffer));
     LOG_VERBOSE(1) << "Internal response allocation: " << tensor_name
                    << ", size " << byte_size << ", addr " << *buffer
-                   << ", memory type " << allocated_memory_type << ", type id "
-                   << allocated_memory_type_id;
+                   << ", memory type " << *allocated_memory_type << ", type id "
+                   << *allocated_memory_type_id;
   }
 
   return nullptr;  // Success
@@ -658,7 +659,7 @@ EnsembleContext::CheckAndSetEnsembleOutput()
     }
 
     // Use the memory type of the memory block as preferred memory type
-    TRTSERVER_Memory_Type dst_memory_type;
+    TRTSERVER_Memory_Type dst_memory_type, actual_memory_type;
     int64_t memory_type_id;
     size_t content_size;
     memory_block->BufferAt(0, &content_size, &dst_memory_type, &memory_type_id);
@@ -666,25 +667,16 @@ EnsembleContext::CheckAndSetEnsembleOutput()
     void* buffer;
     RETURN_IF_ERROR(response_provider_->AllocateOutputBuffer(
         output_pair.first, &buffer, expected_byte_size, shape, dst_memory_type,
-        memory_type_id));
+        memory_type_idm, &actual_memory_type));
 
     // Done with this output if 'expected_byte_size' is 0
     if (expected_byte_size == 0) {
       continue;
     } else if (buffer == nullptr) {
-      if (dst_memory_type != TRTSERVER_MEMORY_CPU) {
-        dst_memory_type = TRTSERVER_MEMORY_CPU;
-        memory_type_id = 0;
-        RETURN_IF_ERROR(response_provider_->AllocateOutputBuffer(
-            output_pair.first, &buffer, expected_byte_size, shape,
-            dst_memory_type, memory_type_id));
-      }
-      if (buffer == nullptr) {
-        return Status(
-            RequestStatusCode::INTERNAL,
-            "all attempts to allocate buffer for output '" + output_pair.first +
-                "' failed");
-      }
+      return Status(
+          RequestStatusCode::INTERNAL,
+          "all attempts to allocate buffer for output '" + output_pair.first +
+              "' failed");
     }
 
     size_t content_offset = 0;
