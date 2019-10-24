@@ -97,6 +97,9 @@ class InferenceBackend {
   // Get the raw pointer to the scheduler of this backend.
   Scheduler* BackendScheduler() { return scheduler_.get(); }
 
+  // Create the sample payload for warm up.
+  Status CreateWarmUpPayload(std::vector<Scheduler::Payload>* payloads);
+
  private:
   // Configuration of the model that this backend represents.
   ModelConfig config_;

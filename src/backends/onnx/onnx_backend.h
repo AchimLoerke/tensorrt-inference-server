@@ -63,6 +63,9 @@ class OnnxBackend : public InferenceBackend {
       uint32_t runner_idx, std::vector<Scheduler::Payload>* payloads,
       std::function<void(Status)> OnCompleteQueuedPayloads);
 
+  // Send a sample request to every model instance for warm up.
+  Status WarmUp();
+
  private:
   DISALLOW_COPY_AND_ASSIGN(OnnxBackend);
   friend std::ostream& operator<<(std::ostream&, const OnnxBackend&);

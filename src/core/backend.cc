@@ -141,4 +141,12 @@ InferenceBackend::Run(
       stats, request_provider, response_provider, OnCompleteHandleInfer);
 }
 
+Status
+InferenceBackend::CreateWarmUpPayload(std::vector<Scheduler::Payload>* payloads)
+{
+  // [TODO] create request / response provider based on model_warm_up in config
+  payloads->clear();
+  return Status(RequestStatusCode::UNSUPPORTED, "Not implemented");
+}
+
 }}  // namespace nvidia::inferenceserver
